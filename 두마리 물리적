@@ -1,0 +1,165 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+np.random.seed(0)
+
+grid_size = 20
+
+gap = np.random.uniform(0.45, 0.68, size=(grid_size, grid_size))  # 공극률
+gap0 = gap.copy()  
+
+ideal_gap = 0.57   
+
+def compute_bad_scores():
+    """
+    공극률(gap)이 이상적인 값(ideal_gap)에서 얼마나 벗어났는지
+    0~1 사이로 정규화한 '나쁨 점수'를 반환.
+    (지렁이 이동 방향 결정용)
+    """
+    global gap
+    phys_bad = (gap - ideal_gap) ** 2
+    phys_max = phys_bad.max() if phys_bad.max() != 0 else 1.0
+    phys_norm = phys_bad / phys_max
+    return phys_norm
+
+def get_neighbors(r, c):
+    """상하좌우 이웃 좌표 생성."""
+    moves = [(-1,0),(1,0),(0,-1),(0,1)]
+    for dr, dc in moves:
+        nr, nc = r + dr, c + dc
+        if 0 <= nr < grid_size and 0 <= nc < grid_size:
+            yield nr, nc
+
+def step_one_worm(pos, visited_local):
+    """
+    한 지렁이가 '한 칸'만 이동하는 함수.
+    - 자기 경로(visited_local)만 피함.
+    - 다른 지렁이의 경로나 현재 위치는 밟을 수 있음.
+    """
+    global gap
+
+    if pos is None:
+        return None, visited_local, False
+
+    r, c = pos
+    bad_score = compute_bad_scores()
+    neighbors = list(get_neighbors(r, c))
+
+    candidates = [p for p in neighbors if p not in visited_local]
+
+    if not candidates:
+        return None, visited_local, False
+
+    best_pos = None
+    best_val = -1
+    for nr, nc in candidates:
+        if bad_score[nr, nc] > best_val:
+            best_val = bad_score[nr, nc]
+            best_pos = (nr, nc)
+
+    pos = best_pos
+    visited_local.add(pos)
+
+    pr, pc = pos
+
+    
+    center_alpha = 0.285  
+    neigh_alpha  = 0.095   
+
+    gap[pr, pc] += center_alpha * (ideal_gap - gap[pr, pc])
+
+    for nr, nc in get_neighbors(pr, pc):
+        gap[nr, nc] += neigh_alpha * (ideal_gap - gap[nr, nc])
+
+    return pos, visited_local, True
+
+def run_two_worms(start_A, start_B, num_steps):
+    """
+    두 지렁이를 '동시에' 움직이기.
+    - 각 지렁이는 자기 경로만 피함.
+    - 상대 지렁이의 경로(과거/현재)는 밟을 수 있음.
+    """
+    pos_A = start_A
+    pos_B = start_B
+
+    visited_A = {pos_A}
+    visited_B = {pos_B}
+
+    path_A = [pos_A]
+    path_B = [pos_B]
+
+    for step in range(num_steps):
+        moved_A = moved_B = False
+
+        pos_A, visited_A, moved_A = step_one_worm(pos_A, visited_A)
+        if moved_A:
+            path_A.append(pos_A)
+
+        pos_B, visited_B, moved_B = step_one_worm(pos_B, visited_B)
+        if moved_B:
+            path_B.append(pos_B)
+
+      
+        if not moved_A and not moved_B:
+            break
+
+    return path_A, path_B
+
+num_steps = 5000
+
+start_A = (0, 0)                 
+start_B = (0, grid_size - 1)     
+
+path_A, path_B = run_two_worms(start_A, start_B, num_steps)
+
+phys_bad0 = (gap0 - ideal_gap) ** 2
+phys_bad1 = (gap  - ideal_gap) ** 2
+vmax = phys_bad0.max()
+
+print("지렁이 A 이동 스텝 수:", len(path_A) - 1)
+print("지렁이 B 이동 스텝 수:", len(path_B) - 1)
+print("A와 B 경로 겹치는 칸 수:", len(set(path_A) & set(path_B)))
+
+fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+
+im0 = axes[0].imshow(phys_bad0, cmap='Reds', vmin=0, vmax=vmax)
+axes[0].set_title('초기 bad_score (공극률 기준)')
+plt.colorbar(im0, ax=axes[0])
+
+
+im1 = axes[1].imshow(phys_bad1, cmap='Reds', vmin=0, vmax=vmax)
+axes[1].set_title('두 지렁이 이동 후 bad_score')
+plt.colorbar(im1, ax=axes[1])
+
+axes[2].imshow(phys_bad1, cmap='Reds', vmin=0, vmax=vmax, interpolation='nearest')
+
+path_A_r = [p[0] for p in path_A]
+path_A_c = [p[1] for p in path_A]
+axes[2].plot(path_A_c, path_A_r,
+             marker='o', markersize=2,
+             linewidth=0.8,
+             label='지렁이 A (좌상단 시작)')
+
+path_B_r = [p[0] for p in path_B]
+path_B_c = [p[1] for p in path_B]
+axes[2].plot(path_B_c, path_B_r,
+             marker='s', markersize=2,
+             linewidth=0.8, color='tab:green',
+             label='지렁이 B (우상단 시작)')
+
+overlap = set(path_A) & set(path_B)
+if overlap:
+    overlap_r = [p[0] for p in overlap]
+    overlap_c = [p[1] for p in overlap]
+    axes[2].scatter(overlap_c, overlap_r,
+                    marker='*', s=20,
+                    c='yellow', edgecolors='black',
+                    label='겹친 경로')
+
+axes[2].set_title('두 지렁이 이동 경로 (동시, 자기 길만 피함)')
+axes[2].invert_yaxis()
+axes[2].legend(fontsize=8, loc='upper right')
+
+plt.tight_layout()
+plt.show()
+
