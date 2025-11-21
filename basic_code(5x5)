@@ -1,0 +1,73 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+grid_size = 5
+
+porosity = np.random.uniform(0.45, 0.68, size=(grid_size, grid_size))
+
+ideal_porosity = 0.57
+
+porosity_norm = porosity / ideal_porosity
+
+
+severity = np.abs(porosity_norm - 1)
+
+worst_indices_flat = np.argsort(severity, axis=None)[-5:]
+worst_5_cells = [np.unravel_index(idx, severity.shape) for idx in worst_indices_flat]
+
+start_position = (0, 0)
+
+if start_position not in worst_5_cells:
+    worst_5_cells.insert(0, start_position)
+
+def manhattan(a, b):   # 여기서 a, b는 (행, 열) 튜플
+    return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+unvisited = set(worst_5_cells)
+route = []
+
+current = start_position
+route.append(current)
+if current in unvisited:
+    unvisited.remove(current)
+
+while unvisited:
+    next_cell = min(unvisited, key=lambda cell: manhattan(current, cell))
+    route.append(next_cell)
+    unvisited.remove(next_cell)
+    current = next_cell
+
+full_path = [start_position]
+
+for target in route[1:]:  
+    cr, cc = full_path[-1]  
+    tr, tc = target         
+
+    while (cr, cc) != (tr, tc):
+        if cr < tr:    
+            cr += 1
+        elif cr > tr:  
+            cr -= 1
+        elif cc < tc:  
+            cc += 1
+        elif cc > tc:  
+            cc -= 1
+        full_path.append((cr, cc))
+
+plt.figure(figsize=(6, 5))
+
+plt.imshow(severity, cmap='Reds')
+plt.colorbar(label="Severity (|porosity/ideal - 1|)")
+plt.title("최악의 5칸 + 이동 경로")
+
+path_r = [p[0] for p in full_path]
+path_c = [p[1] for p in full_path]
+
+plt.plot(path_c, path_r, marker='o', color='black')
+
+plt.gca().invert_yaxis()
+
+for (r, c) in worst_5_cells:
+    plt.text(c, r, "X", color="blue", ha="center", va="center", fontsize=14)
+
+plt.show()
