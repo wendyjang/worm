@@ -1,0 +1,202 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+grid_size = 20
+
+
+P  = np.random.uniform(3.84, 5.76, size=(grid_size, grid_size))  # 인 (kg/10a)
+K  = np.random.uniform(5.12, 7.68, size=(grid_size, grid_size))  # 칼륨 (kg/10a)
+N  = np.random.uniform(7.2, 10.8,  size=(grid_size, grid_size))  # 질소 (kg/10a)
+pH = np.random.uniform(5.5, 7.5,   size=(grid_size, grid_size))  # pH
+
+
+P0  = P.copy()
+K0  = K.copy()
+N0  = N.copy()
+pH0 = pH.copy()
+
+
+ideal_P  = 4.8   # 인 (kg/10a)
+ideal_K  = 6.4   # 칼륨 (kg/10a)
+ideal_N  = 9.0   # 질소 (kg/10a)
+ideal_pH = 6.5   # pH
+
+def compute_bad_scores():
+    global P, K, N, pH
+    bad_P  = (P  - ideal_P)  ** 2
+    bad_K  = (K  - ideal_K)  ** 2
+    bad_N  = (N  - ideal_N)  ** 2
+    bad_pH = (pH - ideal_pH) ** 2
+
+    def normalize(m):
+        mmax = m.max()
+        if mmax == 0:
+            return m
+        return m / mmax
+
+    P_norm  = normalize(bad_P)
+    K_norm  = normalize(bad_K)
+    N_norm  = normalize(bad_N)
+    pH_norm = normalize(bad_pH)
+
+  
+    total_bad = (P_norm + K_norm + N_norm + pH_norm) / 4.0
+    return total_bad
+
+def get_neighbors(r, c):
+    """상하좌우 이웃 좌표 생성."""
+    moves = [(-1,0),(1,0),(0,-1),(0,1)]
+    for dr, dc in moves:
+        nr, nc = r + dr, c + dc
+        if 0 <= nr < grid_size and 0 <= nc < grid_size:
+            yield nr, nc
+
+def step_one_worm(pos, visited_local):
+    """
+    한 지렁이가 '한 칸'만 이동하는 함수.
+    - 자기(해당 지렁이)의 경로는 다시 안 감.
+    - 다른 지렁이의 경로는 지나갈 수 있음.
+    """
+    global P, K, N, pH
+
+    # 이미 막혀서 더 이상 못 움직이는 상태
+    if pos is None:
+        return None, visited_local, False
+
+    r, c = pos
+    bad_score = compute_bad_scores()
+    neighbors = list(get_neighbors(r, c))
+
+    candidates = [p for p in neighbors if p not in visited_local]
+
+    if not candidates:
+        return None, visited_local, False
+
+    best_pos = None
+    best_val = -1
+    for nr, nc in candidates:
+        if bad_score[nr, nc] > best_val:
+            best_val = bad_score[nr, nc]
+            best_pos = (nr, nc)
+
+  
+    pos = best_pos
+    visited_local.add(pos)
+
+    pr, pc = pos
+
+    center_alpha = 0.3   
+    neigh_alpha  = 0.1   
+
+    P[pr, pc]  += center_alpha * (ideal_P  - P[pr, pc])
+    K[pr, pc]  += center_alpha * (ideal_K  - K[pr, pc])
+    N[pr, pc]  += center_alpha * (ideal_N  - N[pr, pc])
+    pH[pr, pc] += center_alpha * (ideal_pH - pH[pr, pc])
+
+    for nr, nc in get_neighbors(pr, pc):
+        P[nr, nc]  += neigh_alpha * (ideal_P  - P[nr, nc])
+        K[nr, nc]  += neigh_alpha * (ideal_K  - K[nr, nc])
+        N[nr, nc]  += neigh_alpha * (ideal_N  - N[nr, nc])
+        pH[nr, nc] += neigh_alpha * (ideal_pH - pH[nr, nc])
+
+    return pos, visited_local, True
+
+def run_two_worms(start_A, start_B, num_steps):
+    """
+    두 지렁이를 '동시에' 움직이기.
+    - 각 지렁이는 자기 경로만 피함.
+    - 서로의 경로는 지나갈 수 있음.
+    """
+    pos_A = start_A
+    pos_B = start_B
+
+    visited_A = {pos_A}
+    visited_B = {pos_B}
+
+    path_A = [pos_A]
+    path_B = [pos_B]
+
+    for step in range(num_steps):
+        moved_A = moved_B = False
+
+      
+        pos_A, visited_A, moved_A = step_one_worm(pos_A, visited_A)
+        if moved_A:
+            path_A.append(pos_A)
+        pos_B, visited_B, moved_B = step_one_worm(pos_B, visited_B)
+        if moved_B:
+            path_B.append(pos_B)
+        if not moved_A and not moved_B:
+            break
+
+    return path_A, path_B
+
+def compute_raw_bad_scores(P_, K_, N_, pH_):
+    """
+    시각화용: 네 성분의 제곱 오차를 평균낸 값.
+    (절대적인 '얼마나 벗어났는지' 지표)
+    """
+    bad_P  = (P_  - ideal_P)  ** 2
+    bad_K  = (K_  - ideal_K)  ** 2
+    bad_N  = (N_  - ideal_N)  ** 2
+    bad_pH = (pH_ - ideal_pH) ** 2
+    return (bad_P + bad_K + bad_N + bad_pH) / 4.0
+
+
+num_steps = 4000
+
+start_A = (0, 0)                 # 좌상단
+start_B = (0, grid_size - 1)     # 우상단
+
+path_A, path_B = run_two_worms(start_A, start_B, num_steps)
+phys_bad0 = compute_raw_bad_scores(P0, K0, N0, pH0)
+phys_bad1 = compute_raw_bad_scores(P,  K,  N,  pH)
+vmax = phys_bad0.max()
+
+print("지렁이 A 이동 스텝 수:", len(path_A) - 1)
+print("지렁이 B 이동 스텝 수:", len(path_B) - 1)
+print("A와 B 경로 겹치는 칸 수:", len(set(path_A) & set(path_B)))
+
+fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+
+im0 = axes[0].imshow(phys_bad0, cmap='Reds', vmin=0, vmax=vmax)
+axes[0].set_title('초기 bad_score (P,K,N,pH 기준)')
+plt.colorbar(im0, ax=axes[0])
+
+im1 = axes[1].imshow(phys_bad1, cmap='Reds', vmin=0, vmax=vmax)
+axes[1].set_title('두 지렁이 이동 후 bad_score')
+plt.colorbar(im1, ax=axes[1])
+
+axes[2].imshow(phys_bad1, cmap='Reds', vmin=0, vmax=vmax, interpolation='nearest')
+
+path_A_r = [p[0] for p in path_A]
+path_A_c = [p[1] for p in path_A]
+axes[2].plot(path_A_c, path_A_r,
+             marker='o', markersize=2,
+             linewidth=0.8, color='tab:blue',
+             label='지렁이 A (좌상단 시작)')
+
+path_B_r = [p[0] for p in path_B]
+path_B_c = [p[1] for p in path_B]
+axes[2].plot(path_B_c, path_B_r,
+             marker='s', markersize=2,
+             linewidth=0.8, color='tab:green',
+             label='지렁이 B (우상단 시작)')
+
+overlap = set(path_A) & set(path_B)
+if overlap:
+    overlap_r = [p[0] for p in overlap]
+    overlap_c = [p[1] for p in overlap]
+    axes[2].scatter(overlap_c, overlap_r,
+                    marker='*', s=60,
+                    c='yellow', edgecolors='black',
+                    label='겹친 경로')
+
+axes[2].set_title('두 지렁이 이동 경로 (화학 4요소 개선)')
+axes[2].invert_yaxis()
+axes[2].legend(fontsize=8, loc='upper right')
+
+plt.tight_layout()
+plt.show()
+
