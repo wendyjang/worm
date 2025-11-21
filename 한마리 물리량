@@ -1,0 +1,98 @@
+#물리적 요소(공극률)을고려한 매핑, 1마리 ver
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+grid_size = 20
+
+
+
+gap = np.random.uniform(0.45, 0.68, size=(grid_size, grid_size))  # 공극률
+gap0 = gap.copy()
+
+ideal_gap = 0.57    
+
+
+
+def compute_bad_scores():
+    """물리/화학 나쁨 점수와 최종 bad_score 계산."""
+    phys_bad = (gap - ideal_gap)   ** 2
+
+
+    phys_max = phys_bad.max() if phys_bad.max() != 0 else 1.0
+
+    phys_norm = phys_bad / phys_max
+    return phys_norm
+
+def get_neighbors(r, c):
+    moves = [(-1,0),(1,0),(0,-1),(0,1)]
+    for dr, dc in moves:
+        nr, nc = r+dr, c+dc
+        if 0 <= nr < grid_size and 0 <= nc < grid_size:
+            yield nr, nc
+
+pos = (0, 0)
+path = [pos]
+visited = set([pos])   
+
+bad0 = compute_bad_scores()
+
+
+num_steps = 300  
+for step in range(num_steps):
+    r, c = pos
+    bad_score = compute_bad_scores()   # 초기 bad_score
+
+
+    neighbors = list(get_neighbors(r, c))
+    unvisited = [p for p in neighbors if p not in visited]
+
+    if not unvisited:
+        break
+
+    best_pos = None
+    best_val = -1
+    for nr, nc in unvisited:
+        if bad_score[nr, nc] > best_val:
+            best_val = bad_score[nr, nc]
+            best_pos = (nr, nc)
+
+    pos = best_pos
+    path.append(pos)
+    visited.add(pos)
+
+    pr, pc = pos
+    gap[pr, pc]    += 0.285 * (ideal_gap    - gap[pr, pc])
+
+
+    for nr, nc in get_neighbors(pr, pc):
+        gap[nr, nc]    += 0.095 * (ideal_gap    - gap[nr, nc])
+
+bad1 = compute_bad_scores()
+print("총 이동 스텝 수:", len(path)-1)
+print("서로 다른 칸 수:", len(set(path))) 
+
+fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+
+im0 = axes[0].imshow(bad0, cmap='Reds')
+axes[0].set_title('초기 bad_score')
+plt.colorbar(im0, ax=axes[0])
+
+im1 = axes[1].imshow(bad1, cmap='Reds')
+axes[1].set_title('지렁이 이동 후 bad_score')
+plt.colorbar(im1, ax=axes[1])
+
+axes[2].imshow(bad1, cmap='Reds')
+path_r = [p[0] for p in path]
+path_c = [p[1] for p in path]
+axes[2].plot(
+    path_c, path_r,
+    marker='o',
+    markersize=1,
+    linewidth=0.25)
+axes[2].set_title(f'지렁이 이동 경로 (방문 칸 수={len(path)})')
+axes[2].invert_yaxis()
+
+plt.tight_layout()
+plt.show()
+
